@@ -1,0 +1,265 @@
+# AgentX DLP — CI
+#
+# Design constraint: this workflow must run on a bare GitHub runner with NO
+# secrets and NO provider network access. Specifically it must NOT require:
+#   • the `claude` CLI            (Layer 2 intent classification is lazy-loaded
+#                                  and fails open, so Layer 1 is fully testable
+#                                  without it)
+#   • an ANTHROPIC_API_KEY        (no provider calls are made anywhere here)
+#   • litellm to be importable    (the python job only byte-compiles the package
+#                                  and runs the litellm-free pattern test)
+#
+# Three independent jobs, no inter-job dependencies:
+#   hook       — Node hook syntax + TypeScript extension compile + test harness
+#   python     — byte-compile litellm/ and run its standalone pattern test
+#   manifests  — the three JSON manifests parse, and plugin/marketplace versions agree
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # =========================================================================
+  # 1. hook — the Claude Code plugin (Node) + the VS Code / Cursor extension
+  # =========================================================================
+  hook:
+    name: hook (node 20)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          # No `cache: npm` on purpose: setup-node's npm cache hard-requires a
+          # lockfile, which would break the "else npm install" fallback below.
+
+      # test/run-tests.sh drives the hook by piping JSON on stdin and reading
+      # the exit code, and uses jq to build/inspect that JSON. jq is present on
+      # current ubuntu-latest images, but do not rely on that — assert it.
+      - name: Ensure jq is installed
+        run: |
+          set -euo pipefail
+          if command -v jq >/dev/null 2>&1; then
+            echo "jq already present: $(jq --version)"
+          else
+            echo "jq not found — installing"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq jq
+          fi
+          jq --version
+
+      # Layer 1 has no runtime deps, so a syntax gate is meaningful on its own
+      # and runs before we spend time on npm.
+      - name: Syntax-check every dlp/*.js
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dlp/*.js)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no dlp/*.js files found — wrong checkout layout?"
+            exit 1
+          fi
+          rc=0
+          for f in "${files[@]}"; do
+            if node --check "$f"; then
+              echo "  ok    $f"
+            else
+              echo "::error file=$f::node --check failed"
+              rc=1
+            fi
+          done
+          echo "checked ${#files[@]} file(s)"
+          exit "$rc"
+
+      - name: Install npm dependencies
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then
+            echo "package-lock.json present — using npm ci"
+            npm ci
+          else
+            echo "no package-lock.json — falling back to npm install"
+            npm install
+          fi
+
+      # Proves src/*.ts still compiles to out/ under the repo's strict tsconfig.
+      - name: Compile the extension (tsc)
+        run: npx tsc -p ./
+
+      # The hook test harness. Invoked as `bash test/run-tests.sh` so this
+      # repo's own PreToolUse hook only ever sees the outer command.
+      - name: Run the hook test harness
+        run: |
+          set -euo pipefail
+          if [ ! -f test/run-tests.sh ]; then
+            echo "::error::test/run-tests.sh is missing — the hook test harness is required by CI"
+            exit 1
+          fi
+          bash test/run-tests.sh
+
+  # =========================================================================
+  # 2. python — litellm/ guardrail. No litellm install, no network.
+  # =========================================================================
+  python:
+    name: python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # setup-python puts its own `python` first on PATH. Assert that, so a
+      # matrix leg can never silently byte-compile with the runner's system
+      # interpreter instead of the version it claims to be testing.
+      - name: Assert interpreter is ${{ matrix.python-version }}
+        env:
+          WANT: ${{ matrix.python-version }}
+        run: |
+          set -euo pipefail
+          command -v python
+          got="$(python -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+          echo "want=$WANT got=$got"
+          if [ "$got" != "$WANT" ]; then
+            echo "::error::expected Python $WANT but the python on PATH is $got"
+            exit 1
+          fi
+
+      # Byte-compiles every .py under litellm/ — catches syntax errors and
+      # version-incompatible syntax without importing anything. Run from the
+      # repo root so `litellm` is resolved as a PATH, not as the pip package.
+      # -f forces recompilation even if a stale __pycache__ ever gets committed.
+      - name: Byte-compile litellm/
+        run: python -m compileall -f -q litellm
+
+      # test_patterns.py does `from dlp_patterns import ...` — a top-level
+      # module import — so cwd MUST be litellm/, not the repo root.
+      #
+      # It also always exits 0 (its main() prints a tally and returns None), so
+      # the exit code is NOT a gate. Parse the "N/M passed" summary and require
+      # N == M. A traceback produces no summary line and therefore fails.
+      - name: Run the DLP pattern tests
+        working-directory: litellm
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/dlp-pattern-tests.log"
+          python test_patterns.py | tee "$log"
+
+          summary="$(grep -Eo '[0-9]+/[0-9]+ passed' "$log" | tail -n1 || true)"
+          if [ -z "$summary" ]; then
+            echo "::error::test_patterns.py produced no 'N/M passed' summary — it crashed or its output format changed"
+            exit 1
+          fi
+
+          passed="${summary%%/*}"
+          rest="${summary#*/}"
+          total="${rest%% *}"
+          echo "parsed summary: passed=$passed total=$total"
+
+          if [ "$total" -eq 0 ]; then
+            echo "::error::test_patterns.py ran 0 cases"
+            exit 1
+          fi
+          if [ "$passed" -ne "$total" ]; then
+            echo "::error::$((total - passed)) of $total DLP pattern case(s) failed"
+            exit 1
+          fi
+          echo "all $total DLP pattern case(s) passed"
+
+  # =========================================================================
+  # 3. manifests — packaging integrity
+  # =========================================================================
+  manifests:
+    name: manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # python3 is preinstalled on ubuntu-latest; no setup-python needed and no
+      # jq dependency here. json.load gives precise parse errors, and the
+      # version-parity check reads better than the equivalent jq pipeline.
+      - name: Manifests parse and versions agree
+        run: |
+          python3 - <<'PY'
+          import json
+          import sys
+
+          PLUGIN = ".claude-plugin/plugin.json"
+          MARKET = ".claude-plugin/marketplace.json"
+          HOOKS = "hooks/hooks.json"
+          PLUGIN_NAME = "agentx-dlp"
+
+          errors = []
+          docs = {}
+
+          # --- 1. all three manifests must be valid JSON -------------------
+          for path in (PLUGIN, MARKET, HOOKS):
+              try:
+                  with open(path, encoding="utf-8") as fh:
+                      docs[path] = json.load(fh)
+                  print(f"  ok    {path} parses")
+              except FileNotFoundError:
+                  errors.append(f"{path} is missing")
+              except json.JSONDecodeError as exc:
+                  errors.append(f"{path} is not valid JSON: {exc}")
+
+          # --- 2. plugin.json / marketplace.json version parity -----------
+          if PLUGIN in docs and MARKET in docs:
+              plugin = docs[PLUGIN]
+
+              if plugin.get("name") != PLUGIN_NAME:
+                  errors.append(
+                      f"{PLUGIN} name is {plugin.get('name')!r}, expected {PLUGIN_NAME!r} "
+                      "— the marketplace lookup below keys off this name"
+                  )
+
+              plugin_version = plugin.get("version")
+              if not plugin_version:
+                  errors.append(f"{PLUGIN} has no 'version'")
+
+              entries = [
+                  p for p in docs[MARKET].get("plugins", [])
+                  if isinstance(p, dict) and p.get("name") == PLUGIN_NAME
+              ]
+              if len(entries) != 1:
+                  errors.append(
+                      f"{MARKET} has {len(entries)} plugin entries named {PLUGIN_NAME!r}, expected exactly 1"
+                  )
+              else:
+                  market_version = entries[0].get("version")
+                  if not market_version:
+                      errors.append(f"{MARKET} entry {PLUGIN_NAME!r} has no 'version'")
+                  elif market_version != plugin_version:
+                      errors.append(
+                          "VERSION DRIFT: "
+                          f"{PLUGIN} version={plugin_version!r} but "
+                          f"{MARKET} {PLUGIN_NAME!r} version={market_version!r} — bump both together"
+                      )
+                  else:
+                      print(f"  ok    version parity: {PLUGIN_NAME} {plugin_version}")
+
+          if errors:
+              for msg in errors:
+                  print(f"::error::{msg}")
+              sys.exit(1)
+
+          print("manifests OK")
+          PY

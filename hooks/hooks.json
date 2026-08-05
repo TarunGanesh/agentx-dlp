@@ -1,0 +1,17 @@
+{
+  "description": "AgentX DLP PreToolUse guard — runs before every tool call (Bash, Write, Edit, and all MCP tools) and blocks data exfiltration to unapproved destinations.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dlp/exfil-hook.js\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

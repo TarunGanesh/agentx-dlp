@@ -1,0 +1,42 @@
+# LiteLLM Proxy config — your organization DLP guardrail
+#
+# Run:
+#   pip install 'litellm[proxy]'
+#   export ANTHROPIC_API_KEY=...        # or whichever provider keys you route
+#   litellm --config litellm/config.yaml
+#
+# Then point Cursor / Claude Code / any client at  http://localhost:4000
+# instead of the provider directly, and every response is DLP-scanned.
+
+model_list:
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+guardrails:
+  # Block on the response coming back (what was asked for)
+  - guardrail_name: "agentx-dlp-response"
+    litellm_params:
+      guardrail: agentx_dlp_guardrail.AgentXDLPGuardrail   # module.ClassName
+      mode: "post_call"
+      # custom kwargs forwarded to __init__:
+      # mode: "block"        # or "redact"
+      # scan_prompt: false
+      # scan_response: true
+
+  # Also block secrets / CUSTOMER DATA / RESTRICTED from leaving in the prompt
+  - guardrail_name: "agentx-dlp-prompt"
+    litellm_params:
+      guardrail: agentx_dlp_guardrail.AgentXDLPGuardrail
+      mode: "pre_call"
+      # scan_prompt: true
+      # scan_response: false
+
+litellm_settings:
+  # ensure the guardrail module is importable (this dir on PYTHONPATH)
+  drop_params: true

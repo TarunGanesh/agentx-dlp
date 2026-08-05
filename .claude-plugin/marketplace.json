@@ -1,0 +1,18 @@
+{
+  "name": "agentx-local",
+  "owner": {
+    "name": "AgentX"
+  },
+  "metadata": {
+    "description": "Local marketplace for AgentX DLP for Claude Code / Cursor."
+  },
+  "plugins": [
+    {
+      "name": "agentx-dlp",
+      "source": "./",
+      "description": "DLP exfiltration guard (PreToolUse hook) — blocks unauthorized data egress at the agent tool-execution boundary.",
+      "version": "0.1.3",
+      "category": "security"
+    }
+  ]
+}

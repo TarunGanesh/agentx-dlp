@@ -1,0 +1,54 @@
+# NOTE: gitignore only treats "#" as a comment at the START of a line.
+# Never put a trailing comment after a pattern — it becomes part of the pattern.
+
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+# `out` = tsc -p ./ output for the VS Code / Cursor extension
+out
+# packaged extension
+*.vsix
+
+# ---------------------------------------------------------------------------
+# Node
+# ---------------------------------------------------------------------------
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+
+# ---------------------------------------------------------------------------
+# Python — litellm/ guardrail.
+# litellm/__pycache__ exists on disk today and must never be committed
+# (it holds .pyc for whatever interpreter ran last).
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# ---------------------------------------------------------------------------
+# Secrets / local runtime state
+# ---------------------------------------------------------------------------
+.env
+.env.*
+# Per-machine Claude Code permission grants. Contains absolute paths from
+# whoever ran it last; it is personal state, not project configuration.
+.claude/settings.local.json
+# also covers any agentx-dlp.log copied in-tree from ~/.claude/
+*.log
+
+# ---------------------------------------------------------------------------
+# Editor / OS junk
+# ---------------------------------------------------------------------------
+.vscode-test/
+.idea/
+*.swp
+*.swo
+.DS_Store
+._*
+Thumbs.db
+desktop.ini

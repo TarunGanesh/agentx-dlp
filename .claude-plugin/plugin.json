@@ -1,0 +1,9 @@
+{
+  "name": "agentx-dlp",
+  "description": "AgentX DLP guard — blocks unauthorized data exfiltration at the agent tool-execution boundary: public gists/repos, personal email/cloud, paste sites, and secrets/PII/CUSTOMER-DATA leaving to unapproved destinations. Policy is a worked example using placeholder identifiers — adapt it to your own environment.",
+  "version": "0.1.3",
+  "author": {
+    "name": "AgentX DLP contributors"
+  },
+  "keywords": ["dlp", "security", "exfiltration", "data-loss-prevention"]
+}

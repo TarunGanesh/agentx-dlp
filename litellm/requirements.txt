@@ -1,0 +1,31 @@
+# your organization DLP — LiteLLM guardrail runtime dependencies.
+#
+# Only ONE requirement, because only one thing here is a real third-party import:
+#
+#   agentx_dlp_guardrail.py imports
+#       litellm.integrations.custom_guardrail  (CustomGuardrail)
+#       litellm.proxy._types                   (UserAPIKeyAuth)
+#       litellm.caching.caching                (DualCache)
+#       litellm._logging                       (verbose_proxy_logger)
+#       fastapi                                (HTTPException, in a try/except)
+#
+#   dlp_patterns.py imports only `re` from the stdlib.
+#   test_patterns.py imports only dlp_patterns — it needs NOTHING from this file.
+#
+# fastapi is not listed separately: it ships with the litellm proxy extra, which
+# is what actually runs this guardrail (`litellm --config config.yaml`). Listing
+# it again would imply we support a fastapi version independent of litellm's,
+# which we do not. The HTTPException import is already wrapped in try/except and
+# falls back to RuntimeError, so a missing fastapi degrades rather than crashes.
+#
+# Nothing is version-pinned on purpose:
+#   • this is a prototype, not a deployed service — there is no lockfile and no
+#     reproducible-build requirement yet;
+#   • the guardrail only touches litellm's stable public CustomGuardrail surface,
+#     so pinning would create upgrade friction with no safety benefit;
+#   • CI never installs this file. The python job runs `compileall` plus
+#     `test_patterns.py`, both of which are litellm-free by design, so CI stays
+#     offline and cannot be broken by an upstream release.
+# Pin here (and add a lockfile) at the point this is deployed for real.
+
+litellm[proxy]

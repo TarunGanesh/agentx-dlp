@@ -1,0 +1,51 @@
+{
+  "name": "agentx-dlp",
+  "displayName": "AgentX DLP",
+  "description": "Data Loss Prevention for AI coding assistants (Claude Code & Cursor) — blocks data exfiltration to unapproved destinations.",
+  "version": "0.1.3",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["dlp", "security", "exfiltration", "data-loss-prevention", "claude-code", "cursor"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "agentx-dlp.start",     "title": "Start Monitoring",  "category": "AgentX DLP" },
+      { "command": "agentx-dlp.stop",      "title": "Stop Monitoring",   "category": "AgentX DLP" },
+      { "command": "agentx-dlp.showLogs",  "title": "Show Activity Log", "category": "AgentX DLP" },
+      { "command": "agentx-dlp.clearLogs", "title": "Clear Logs",        "category": "AgentX DLP" }
+    ],
+    "configuration": {
+      "title": "AgentX DLP",
+      "properties": {
+        "agentxDlp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-start DLP monitoring when the extension activates."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile":   "tsc -p ./",
+    "watch":     "tsc -watch -p ./",
+    "lint":      "eslint src --ext ts",
+    "test":      "bash test/run-tests.sh",
+    "test:py":   "cd litellm && python3 test_patterns.py",
+    "check":     "node --check dlp/exfil-hook.js && node --check dlp/semantic-analyzer.js && node --check dlp/content-scanner.js && node --check dlp/mcp-handler.js && node --check dlp/allowlist.js && node --check dlp/patterns.js && node --check dlp/intent-classifier.js"
+  },
+  "devDependencies": {
+    "@types/node": "16.x",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.0"
+  }
+}
