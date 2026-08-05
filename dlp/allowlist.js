@@ -39,13 +39,12 @@ const APPROVED_HOSTS = [
   's3.us-east-1.amazonaws.com',
   's3.us-west-2.amazonaws.com',
 
-  // CI/CD
-  'circleci.com',
-  'buildkite.com',
+  // CI/CD - Example
+  //'circleci.com',
 
-  // Approved developer tools used company-wide
-  'datadoghq.com',
-  'sentry.io',
+  // Approved developer tools used company-wide - Example
+  //'datadoghq.com'
+  
 ];
 
 // ---------------------------------------------------------------------------
